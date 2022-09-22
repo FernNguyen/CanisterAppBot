@@ -4,10 +4,12 @@ import { Actor, HttpAgent } from "@dfinity/agent";
 import { Principal } from "@dfinity/principal";
 import https from 'https';
 import { idlFactory } from "./candid/icpswap.did.js"; //Import DID of Token XCANIC
+import { poolData } from "./candid/pooldata.did.js"; //Import DID of Token XCANIC
 global.fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 // replace the value below with the Telegram token you receive from @BotFather
 const access_token = '5738768169:AAFnRfH3FSsk0K2tHfHSy2_fqqCSjOJozPM';
+const poolDataCanister = 'cuvse-myaaa-aaaan-qas6a-cai';
 const Tokens = {
 	"xcanic": {
 		"name": "Canister Token",
@@ -97,9 +99,7 @@ async function checkPrice(_token, callback){
 	let _tokenName = _token.toLowerCase().trim()
 	try{
 		let _tokenInfo = Tokens[_tokenName];
-		console.log('_tokenInfo:',_tokenInfo);
 		let _pool_canister = _tokenInfo['pool_id'];
-		console.log('_pool_canister:',_pool_canister);
 		const httpsAgent = new https.Agent({
 			rejectUnauthorized: false,
 		})
@@ -107,18 +107,24 @@ async function checkPrice(_token, callback){
 		const agent = new HttpAgent({
 			host: 'https://boundary.ic0.app',
 		});
+		const _tokenApi =  Actor.createActor(poolData, { agent, canisterId: poolDataCanister });
 		const api = Actor.createActor(idlFactory, { agent, canisterId: _pool_canister });
 		let poolInfo = await api.infoWithNoBalance();
+		let tokenInfo = await _tokenApi.getToken(_tokenInfo['canister_id']);
+		// console.log('data:', tokenInfo);
 		let priceRes = await axios.get("http://ic0-proxy.canister.app/api/get_icp_rate");
 		let icpPrice = priceRes.data.price;
 		let price = Number(poolInfo.sqrtRatioX96) ** 2 / 2 ** 192;
+		let _priceChange = tokenInfo.priceUSDChangeWeek.toFixed(2);
 
-		let msg = "<strong>"+_tokenInfo['name']+" Price</strong>\n\n" +
-			"1 "+_tokenInfo['symbol']+" = <strong>"+(1/price).toFixed(8)+"</strong> WICP (<strong>$"+((1/price).toFixed(8)*icpPrice).toFixed(8)+"</strong>) \n" +
+		let msg = "<strong>"+_tokenInfo['name']+"</strong> ("+tokenInfo.standard+")\n"+_tokenInfo['canister_id']+" \n\n"+
+			"1 "+_tokenInfo['symbol']+" = <strong>"+(1/price).toFixed(8)+"</strong> WICP (" + (_priceChange>0?"▲ ":"▼ ") + _priceChange + "%) \n" +
+			"1 "+_tokenInfo['symbol']+" = <strong>$"+((1/price).toFixed(8)*icpPrice).toFixed(8)+"</strong> \n" +
 			"1 WICP = <strong>"+numberWithCommas(price.toFixed(3))+"</strong> "+_tokenInfo['symbol']+"\n" +
+			"24h Volume: <strong>$"+numberWithCommas(tokenInfo.volumeUSDWeek.toFixed(3))+"</strong>\n" +
 			"Total Supply: <strong>"+numberWithCommas(_tokenInfo['total_supply'])+"</strong> "+_tokenInfo['symbol']+"\n" +
-			"Market Cap: <strong>$"+numberWithCommas((_tokenInfo['total_supply']*1/price).toFixed(2))+"</strong>\n" +
-			"ICP Price: <strong>"+icpPrice.toFixed(3)+"</strong> USDT\n\n" +
+			"Market Cap: <strong>$"+numberWithCommas((_tokenInfo['total_supply']*1/price).toFixed(2))+"</strong>\n\n" +
+			"ICP Price: <strong>"+icpPrice.toFixed(3)+"</strong> USDT\n" +
 			"Swap on: "+(_tokenInfo['icpswap']?"<a href='"+_tokenInfo['icpswap']+"'>ICPSwap</a>":"") +
 			(_tokenInfo['sonic']?" - <a href='"+_tokenInfo['sonic']+"'>Sonic</a>":"")+" | "+
 			"Sponsored: canister.app";
